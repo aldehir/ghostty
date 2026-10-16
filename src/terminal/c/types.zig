@@ -245,6 +245,7 @@ const type_decls = [_]TypeDecl{
     .initStruct("GhosttyTerminalSelectWordOptions", selection.SelectWordOptions),
     .initStruct("GhosttyTerminalSelectionFormatOptions", selection.FormatOptions),
     .initTaggedStruct("GhosttyTerminalUnknownSequence", terminal.UnknownSequence.C, "tag", "value", .generated),
+    .initStruct("GhosttyTerminalUnknownModeSequence", terminal.UnknownModeSequence),
     .initStruct("GhosttyTerminalUnknownOscSequence", terminal.UnknownOscSequence),
     .initStruct("GhosttyTerminalUnknownStringSequence", terminal.UnknownStringSequence),
     .initStruct("GhosttyTerminalWriteStop", terminal.WriteStop),

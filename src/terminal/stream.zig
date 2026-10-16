@@ -85,6 +85,8 @@ pub const Action = union(Key) {
     restore_mode: Mode,
     request_mode: Mode,
     request_mode_unknown: RawMode,
+    set_mode_unknown: RawMode,
+    reset_mode_unknown: RawMode,
     top_and_bottom_margin: Margin,
     left_and_right_margin: Margin,
     left_and_right_margin_ambiguous,
@@ -193,6 +195,8 @@ pub const Action = union(Key) {
             "restore_mode",
             "request_mode",
             "request_mode_unknown",
+            "set_mode_unknown",
+            "reset_mode_unknown",
             "top_and_bottom_margin",
             "left_and_right_margin",
             "left_and_right_margin_ambiguous",
@@ -2181,6 +2185,10 @@ pub fn Stream(comptime H: type) type {
                             self.handler.vt(.set_mode, .{ .mode = mode });
                         } else {
                             logUnsupportedOnce("unimplemented mode: {}", .{mode_int}, mode_int);
+                            self.handler.vt(.set_mode_unknown, .{
+                                .mode = mode_int,
+                                .ansi = ansi_mode,
+                            });
                         }
                     }
                 },
@@ -2202,6 +2210,10 @@ pub fn Stream(comptime H: type) type {
                             self.handler.vt(.reset_mode, .{ .mode = mode });
                         } else {
                             logUnsupportedOnce("unimplemented mode: {}", .{mode_int}, mode_int);
+                            self.handler.vt(.reset_mode_unknown, .{
+                                .mode = mode_int,
+                                .ansi = ansi_mode,
+                            });
                         }
                     }
                 },
@@ -4111,6 +4123,42 @@ test "stream: DECRQM dispatch" {
             try testing.expectEqualDeep(case.raw, s.handler.raw);
         }
     }
+}
+
+test "stream: unknown SM/RM dispatch" {
+    const H = struct {
+        set: std.ArrayList(Action.RawMode) = .empty,
+        reset: std.ArrayList(Action.RawMode) = .empty,
+        known: usize = 0,
+
+        pub fn vt(self: *@This(), comptime action: Action.Tag, value: Action.Value(action)) void {
+            switch (action) {
+                .set_mode_unknown => self.set.append(testing.allocator, value) catch unreachable,
+                .reset_mode_unknown => self.reset.append(testing.allocator, value) catch unreachable,
+                .set_mode, .reset_mode => self.known += 1,
+                else => {},
+            }
+        }
+    };
+
+    var s: Stream(H) = .init(.{ .handler = .{} });
+    defer s.handler.set.deinit(testing.allocator);
+    defer s.handler.reset.deinit(testing.allocator);
+
+    // Known and unknown modes in one sequence are each dispatched.
+    s.nextSlice("\x1b[?9001;1004h");
+    s.nextSlice("\x1b[9999l");
+    s.nextSlice("\x1b[?90");
+    s.nextSlice("01l");
+
+    try testing.expectEqual(@as(usize, 1), s.handler.known);
+    try testing.expectEqualSlices(Action.RawMode, &.{
+        .{ .mode = 9001, .ansi = false },
+    }, s.handler.set.items);
+    try testing.expectEqualSlices(Action.RawMode, &.{
+        .{ .mode = 9999, .ansi = true },
+        .{ .mode = 9001, .ansi = false },
+    }, s.handler.reset.items);
 }
 
 test "stream: ansi set mode (SM) and reset mode (RM) with unknown value" {

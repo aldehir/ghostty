@@ -286,15 +286,25 @@ pub const UnknownStringSequence = extern struct {
 /// C: GhosttyTerminalUnknownOscSequence
 pub const UnknownOscSequence = osc.Command.Unknown.C;
 
+/// A set or reset of a mode that is not implemented.
+///
+/// C: GhosttyTerminalUnknownModeSequence
+pub const UnknownModeSequence = extern struct {
+    mode: u16,
+    ansi: bool,
+    enabled: bool,
+};
+
 /// An unsupported terminal sequence reported to the C callback.
 ///
 /// C: GhosttyTerminalUnknownSequence
 pub const UnknownSequence = union(Tag) {
     apc: UnknownStringSequence,
     osc: UnknownOscSequence,
+    mode: UnknownModeSequence,
 
     /// C: GhosttyTerminalUnknownSequenceTag
-    pub const Tag = lib.Enum(lib.target, &.{ "apc", "osc" });
+    pub const Tag = lib.Enum(lib.target, &.{ "apc", "osc", "mode" });
 
     const c_union = lib.TaggedUnion(
         lib.target,
@@ -819,6 +829,11 @@ const Effects = struct {
                 },
             },
             .osc => |osc_value| .{ .osc = osc_value.cval() },
+            .mode => |mode_value| .{ .mode = .{
+                .mode = mode_value.mode,
+                .ansi = mode_value.ansi,
+                .enabled = mode_value.enabled,
+            } },
         });
         func(@ptrCast(wrapper), wrapper.effects.userdata, &value);
     }
@@ -6007,6 +6022,7 @@ test "set unknown_sequence callback" {
                     last_terminator = osc_value.terminator;
                     break :str osc_value.content;
                 },
+                .mode => return,
             };
             content_len = @min(str.len, content.len);
             @memcpy(content[0..content_len], str.ptr[0..content_len]);
