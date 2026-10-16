@@ -101,7 +101,7 @@ extern "C" {
  * | `GHOSTTY_TERMINAL_OPT_DESKTOP_NOTIFICATION`| `GhosttyTerminalDesktopNotificationFn` | Desktop notification via OSC 9 / OSC 777 |
  * | `GHOSTTY_TERMINAL_OPT_PROGRESS_REPORT`  | `GhosttyTerminalProgressReportFn` | Progress report via OSC 9;4               |
  * | `GHOSTTY_TERMINAL_OPT_PROGRAM_STATUS`   | `GhosttyTerminalProgramStatusFn`  | Program status report via OSC 7501        |
- * | `GHOSTTY_TERMINAL_OPT_UNKNOWN_SEQUENCE` | `GhosttyTerminalUnknownSequenceFn` | APC or OSC sequence that libghostty-vt does not implement (see Unsupported Sequences) |
+ * | `GHOSTTY_TERMINAL_OPT_UNKNOWN_SEQUENCE` | `GhosttyTerminalUnknownSequenceFn` | APC, OSC, or mode that libghostty-vt does not implement (see Unsupported Sequences) |
  * | `GHOSTTY_TERMINAL_OPT_RENDER_HOLD`      | `GhosttyTerminalRenderHoldFn`     | Synchronized output (mode 2026) begins or ends |
  * | `GHOSTTY_TERMINAL_OPT_SEMANTIC_PROMPT`  | `GhosttyTerminalSemanticPromptFn` | Shell reports a prompt or command step via OSC 133 |
  * | `GHOSTTY_TERMINAL_OPT_RESET`            | `GhosttyTerminalResetFn`          | Full reset (RIS, ESC c)                   |
@@ -141,9 +141,13 @@ extern "C" {
  * - `GHOSTTY_TERMINAL_OPT_UNKNOWN_MAX_BYTES` sets how many bytes of each
  *   sequence to keep. It defaults to zero, which turns the feature off.
  *
+ * Modes are the exception: they carry no data, so unknown modes are
+ * reported as soon as the callback is installed.
+ *
  * The callback receives a `GhosttyTerminalUnknownSequence`. Its tag says
- * which kind of sequence arrived. APC and OSC sequences are reported today,
- * and more kinds may be added later, so ignore any tag you don't handle.
+ * which kind of sequence arrived. APC and OSC sequences and modes are
+ * reported today, and more kinds may be added later, so ignore any tag you
+ * don't handle.
  *
  * For OSC, the content is everything between `ESC ]` and the terminator,
  * including the number that identifies the sequence. As an example,
@@ -552,6 +556,9 @@ typedef enum GHOSTTY_ENUM_TYPED {
 
   /** Operating System Command (OSC). The value is in `value.osc`. */
   GHOSTTY_TERMINAL_UNKNOWN_SEQUENCE_OSC = 1,
+
+  /** Set or reset of a mode (SM/RM). The value is in `value.mode`. */
+  GHOSTTY_TERMINAL_UNKNOWN_SEQUENCE_MODE = 2,
   GHOSTTY_TERMINAL_UNKNOWN_SEQUENCE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyTerminalUnknownSequenceTag;
 
@@ -614,6 +621,27 @@ typedef struct {
 } GhosttyTerminalUnknownOscSequence;
 
 /**
+ * A set or reset of a mode that libghostty-vt does not implement.
+ *
+ * Programs turn modes on with `CSI n h` (ANSI) or `CSI ? n h` (DEC
+ * private) and off with `l` instead of `h`. A sequence that names several
+ * modes, such as `CSI ? 9001 ; 1004 h`, reports each unknown one
+ * separately; known modes in it still take effect.
+ *
+ * @ingroup terminal
+ */
+typedef struct {
+  /** The mode number. */
+  uint16_t mode;
+
+  /** True for an ANSI mode, false for a DEC private mode (`CSI ?`). */
+  bool ansi;
+
+  /** True for set (`h`), false for reset (`l`). */
+  bool enabled;
+} GhosttyTerminalUnknownModeSequence;
+
+/**
  * Unsupported terminal sequence value.
  *
  * @ingroup terminal
@@ -624,6 +652,9 @@ typedef union {
 
   /** Operating System Command (OSC). */
   GhosttyTerminalUnknownOscSequence osc;
+
+  /** Set or reset of a mode. */
+  GhosttyTerminalUnknownModeSequence mode;
 
   /**
    * Padding for ABI compatibility. Do not use.
@@ -664,9 +695,10 @@ typedef struct {
  * replies. It must not call ghostty_terminal_vt_write() on the same
  * terminal.
  *
- * Nothing is reported until GHOSTTY_TERMINAL_OPT_UNKNOWN_MAX_BYTES is also
- * set to a nonzero value. Installing the callback by itself keeps no data
- * and allocates no memory.
+ * APC and OSC sequences are not reported until
+ * GHOSTTY_TERMINAL_OPT_UNKNOWN_MAX_BYTES is also set to a nonzero value.
+ * Installing the callback by itself keeps no data and allocates no memory,
+ * and reports only unknown modes.
  *
  * @param terminal The terminal handle
  * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA

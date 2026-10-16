@@ -104,12 +104,15 @@ pub const Handler = struct {
     /// can implement them yourself. See `UnknownSequence` for the kinds of
     /// sequences that are reported.
     ///
-    /// Nothing is reported until you also set a byte limit for each kind
-    /// you want. The limits default to zero, which turns reporting off:
+    /// APC and OSC sequences are not reported until you also set a byte
+    /// limit for each kind you want. The limits default to zero, which
+    /// turns reporting off:
     ///
     ///   - APC: `apc_handler.unknown_max_bytes`
     ///   - OSC: `Stream.Options.osc_unknown_max_bytes` when creating the
     ///     stream, or `stream.parser.osc_parser.unknown_max_bytes` later.
+    ///
+    /// Modes carry no data, so unknown modes are always reported.
     ///
     /// This example handles a made-up OSC 7400 and ignores everything
     /// else:
@@ -360,6 +363,11 @@ pub const Handler = struct {
         /// An OSC sequence (`ESC ]`) whose number is not implemented.
         osc: Osc,
 
+        /// A set or reset (`CSI h`, `CSI l`, `CSI ? h`, `CSI ? l`) of a
+        /// mode that is not implemented. A sequence that names several
+        /// modes reports each unknown one separately.
+        mode: Mode,
+
         /// Content between a string sequence's introducer and terminator.
         pub const String = struct {
             content: []const u8,
@@ -368,6 +376,17 @@ pub const Handler = struct {
 
         /// An OSC sequence whose number is not implemented.
         pub const Osc = osc.Command.Unknown;
+
+        /// A mode that is not implemented.
+        pub const Mode = struct {
+            /// The mode number.
+            mode: u16,
+            /// True for an ANSI mode (`CSI n h`), false for a DEC private
+            /// mode (`CSI ? n h`).
+            ansi: bool,
+            /// True for set (`h`), false for reset (`l`).
+            enabled: bool,
+        };
     };
 
     /// A request from the running program to resize the window, passed to
@@ -775,6 +794,16 @@ pub const Handler = struct {
             .kitty_keyboard_query => self.queryKittyKeyboard(),
             .request_mode => self.requestMode(value.mode),
             .request_mode_unknown => self.requestModeUnknown(value.mode, value.ansi),
+            .set_mode_unknown => self.unknownSequence(.{ .mode = .{
+                .mode = value.mode,
+                .ansi = value.ansi,
+                .enabled = true,
+            } }),
+            .reset_mode_unknown => self.unknownSequence(.{ .mode = .{
+                .mode = value.mode,
+                .ansi = value.ansi,
+                .enabled = false,
+            } }),
             .size_report => self.reportSize(value),
             .window_title => try self.windowTitle(value.title),
             .report_pwd => try self.reportPwd(value.url),
@@ -2481,6 +2510,7 @@ test "unknown APC effect callback" {
                     truncated = apc_value.truncated;
                 },
                 .osc => osc_count += 1,
+                .mode => unreachable,
             }
             count += 1;
         }
@@ -2525,7 +2555,7 @@ test "unknown OSC effect callback" {
         fn unknownSequence(_: *Handler, value: Handler.UnknownSequence) void {
             const v = switch (value) {
                 .osc => |v| v,
-                .apc => unreachable,
+                .apc, .mode => unreachable,
             };
             content_len = v.content.len;
             @memcpy(content[0..v.content.len], v.content);
@@ -2582,6 +2612,55 @@ test "unknown OSC effect callback" {
     s.parser.osc_parser.unknown_max_bytes = 0;
     s.nextSlice("\x1B]7400;x\x07");
     try testing.expectEqual(@as(usize, 4), S.count);
+}
+
+test "unknown mode effect callback" {
+    var t: Terminal = try .init(testing.io, testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var modes_seen: [4]Handler.UnknownSequence.Mode = undefined;
+        var count: usize = 0;
+
+        fn unknownSequence(_: *Handler, value: Handler.UnknownSequence) void {
+            switch (value) {
+                .mode => |v| {
+                    modes_seen[count] = v;
+                    count += 1;
+                },
+                else => unreachable,
+            }
+        }
+    };
+    S.count = 0;
+
+    var handler: Handler = .init(&t);
+    handler.unknown_sequence = &S.unknownSequence;
+    var s: Stream = .init(.{
+        .allocator = testing.allocator,
+        .handler = handler,
+    });
+    defer s.deinit();
+
+    // No byte limit is needed, and known modes still take effect.
+    s.nextSlice("\x1b[?9001;1004h\x1b[?9001l\x1b[9999h");
+    try testing.expect(t.modes.get(.focus_event));
+    try testing.expectEqual(@as(usize, 3), S.count);
+    try testing.expectEqualDeep(Handler.UnknownSequence.Mode{
+        .mode = 9001,
+        .ansi = false,
+        .enabled = true,
+    }, S.modes_seen[0]);
+    try testing.expectEqualDeep(Handler.UnknownSequence.Mode{
+        .mode = 9001,
+        .ansi = false,
+        .enabled = false,
+    }, S.modes_seen[1]);
+    try testing.expectEqualDeep(Handler.UnknownSequence.Mode{
+        .mode = 9999,
+        .ansi = true,
+        .enabled = true,
+    }, S.modes_seen[2]);
 }
 
 test "resize reports mode 2048 geometry" {

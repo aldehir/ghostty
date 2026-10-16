@@ -389,6 +389,8 @@ pub const StreamHandler = struct {
             .title_pop,
             .kitty_dnd,
             .osc_unknown,
+            .set_mode_unknown,
+            .reset_mode_unknown,
             .program_status,
             => {},
         }
