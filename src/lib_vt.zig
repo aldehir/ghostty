@@ -95,6 +95,9 @@ pub const StringMap = terminal.StringMap;
 pub const Style = terminal.Style;
 pub const Terminal = terminal.Terminal;
 pub const TerminalStream = terminal.TerminalStream;
+/// The C API's implementation (void without -Dc-abi), for `vt_extra`
+/// code that takes the C API's handles.
+pub const c_api = terminal.c_api;
 pub const Stream = terminal.Stream;
 pub const StreamAction = terminal.StreamAction;
 pub const StreamBoundary = terminal.StreamBoundary;
@@ -192,6 +195,10 @@ comptime {
         // downstream Zig module consumers don't get the override
         // injected into their binaries. See quirks_memset.zig.
         _ = @import("quirks_memset.zig");
+
+        // An embedder's own exports (`-Dvt-extra`), built against this
+        // library's Zig API, which they reach as @import("root").
+        _ = @import("vt_extra");
 
         const c = terminal.c_api;
         const features = terminal.options;

@@ -45,6 +45,10 @@ lib_version: std.SemanticVersion = .{ .major = 0, .minor = 0, .patch = 0 },
 /// the executable alone.
 installed_exe_path: ?[]const u8 = null,
 
+/// A Zig file compiled into libghostty-vt alongside the C API, for an
+/// embedder's own exports. See `vt_extra` in lib_vt.zig.
+lib_vt_extra: ?[]const u8 = null,
+
 /// Binary properties
 pie: bool = false,
 strip: bool = false,
@@ -377,6 +381,14 @@ pub fn init(b: *std.Build, appVersion: []const u8, libVersion: []const u8) !Conf
             return error.InvalidInstalledExePath;
         }
     }
+
+    config.lib_vt_extra = b.option(
+        []const u8,
+        "vt-extra",
+        "Path to a Zig file to compile into libghostty-vt with the C API. " ++
+            "It reaches the library's Zig API as @import(\"root\") and adds " ++
+            "its own exports.",
+    );
 
     //---------------------------------------------------------------
     // Binary Properties

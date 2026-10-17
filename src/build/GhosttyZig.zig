@@ -133,6 +133,17 @@ fn initVt(
     vt.addOptions("build_options", general_options);
     vt_options.add(b, vt);
 
+    // The embedder's extra exports, or none. Only the C library imports
+    // it (see lib_vt.zig), so only its module gets one.
+    if (vt_options.c_abi) vt.addImport("vt_extra", b.createModule(.{
+        .root_source_file = if (cfg.lib_vt_extra) |path|
+            .{ .cwd_relative = path }
+        else
+            b.path("src/lib_vt_extra_none.zig"),
+        .target = cfg.target,
+        .optimize = cfg.optimize,
+    }));
+
     // We always need unicode tables
     deps.unicode_tables.addModuleImport(vt);
 

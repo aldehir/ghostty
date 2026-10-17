@@ -72,7 +72,7 @@ pub const Io = struct {
 /// Wrapper around ZigTerminal that tracks additional state for C API usage,
 /// such as the persistent VT stream needed to handle escape sequences split
 /// across multiple vt_write calls.
-const TerminalWrapper = struct {
+pub const TerminalWrapper = struct {
     terminal: *ZigTerminal,
     /// C construction has no I/O argument, so the wrapper retains the owner
     /// created by `new` or transferred from snapshot decoding until `free`.
